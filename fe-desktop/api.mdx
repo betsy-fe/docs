@@ -1,0 +1,382 @@
+---
+title: API & Public interfaces
+description: Public APIs and interfaces for fe-desktop
+---
+
+## Overview
+
+This page documents the public interfaces and APIs available in fe-desktop. These are the primary integration points for embedding the application or extending its functionality.
+
+## SDK Integration
+
+The application can be embedded as an iFrame widget using the SDK.
+
+### Basic SDK usage
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Betting Widget</title>
+</head>
+<body>
+  <div id="betsy-widget"></div>
+  
+  <script src="https://your-domain.com/sdk/init.js"></script>
+  <script>
+    BetsySDK.init({
+      container: '#betsy-widget',
+      cid: 'your_client_id',
+      token: 'user_auth_token',
+      locale: 'en',
+      theme: 'dark'
+    });
+  </script>
+</body>
+</html>
+```
+
+### SDK configuration options
+
+<ParamField path="container" type="string" required>
+  CSS selector for the container element
+</ParamField>
+
+<ParamField path="cid" type="string" required>
+  Client ID (also used as API key)
+</ParamField>
+
+<ParamField path="token" type="string">
+  User authentication token. If not provided, guest mode is activated.
+</ParamField>
+
+<ParamField path="locale" type="string" default="en">
+  Language code (en, ru, es, pt, etc.)
+</ParamField>
+
+<ParamField path="theme" type="string">
+  Theme identifier (dark, light, custom)
+</ParamField>
+
+<ParamField path="customStyles" type="string">
+  URL to custom CSS file
+</ParamField>
+
+<ParamField path="dynamicHeight" type="boolean" default="false">
+  Enable dynamic height for iFrame
+</ParamField>
+
+<ParamField path="sub_partner_id" type="string">
+  Sub-partner identifier for tracking
+</ParamField>
+
+## PostMessage API
+
+The application communicates with parent windows via PostMessage API.
+
+### Sending messages to the widget
+
+```javascript
+const iframe = document.getElementById('betsy-iframe');
+
+// Navigate to a specific page
+iframe.contentWindow.postMessage({
+  type: 'NAVIGATE',
+  payload: {
+    path: '/live'
+  }
+}, '*');
+
+// Update user balance
+iframe.contentWindow.postMessage({
+  type: 'UPDATE_BALANCE',
+  payload: {
+    balance: 1000.50,
+    currency: 'USD'
+  }
+}, '*');
+```
+
+### Receiving messages from the widget
+
+```javascript
+window.addEventListener('message', (event) => {
+  if (event.data.type === 'BET_PLACED') {
+    console.log('Bet placed:', event.data.payload);
+  }
+  
+  if (event.data.type === 'HEIGHT_CHANGED') {
+    // Adjust iframe height
+    iframe.style.height = event.data.payload.height + 'px';
+  }
+});
+```
+
+### Available message types
+
+<ResponseField name="NAVIGATE" type="outgoing">
+  Navigate to a specific route
+  
+  ```json
+  {
+    "type": "NAVIGATE",
+    "payload": {
+      "path": "/live"
+    }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="UPDATE_BALANCE" type="outgoing">
+  Update user balance display
+  
+  ```json
+  {
+    "type": "UPDATE_BALANCE",
+    "payload": {
+      "balance": 1000.50,
+      "currency": "USD"
+    }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="BET_PLACED" type="incoming">
+  Notification when a bet is placed
+  
+  ```json
+  {
+    "type": "BET_PLACED",
+    "payload": {
+      "betId": "123456",
+      "amount": 10,
+      "odds": 2.5
+    }
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="HEIGHT_CHANGED" type="incoming">
+  iFrame height changed (when dynamicHeight is enabled)
+  
+  ```json
+  {
+    "type": "HEIGHT_CHANGED",
+    "payload": {
+      "height": 800
+    }
+  }
+  ```
+</ResponseField>
+
+## HTTP API Client
+
+The application provides an HTTP client for backend communication.
+
+### Creating a custom API client
+
+```typescript
+import { createHttpClient } from '@/lib/api/createHttpClient';
+
+const customClient = createHttpClient({
+  baseURL: 'https://api.example.com',
+  headers: {
+    'X-Custom-Header': 'value'
+  }
+});
+
+// Make requests
+const response = await customClient.get('/endpoint');
+```
+
+### Available HTTP methods
+
+```typescript
+// GET request
+await httpClient.get('/events', { params: { live: true } });
+
+// POST request
+await httpClient.post('/bets', { amount: 10, outcomeId: '123' });
+
+// PUT request
+await httpClient.put('/profile', { locale: 'en' });
+
+// DELETE request
+await httpClient.delete('/bets/123');
+```
+
+## WebSocket API
+
+Real-time communication via Socket.io.
+
+### Socket connection
+
+```typescript
+import { SocketService } from '@/lib/api/Socket';
+
+const socket = new SocketService({
+  url: 'wss://socket.example.com',
+  apiKey: 'your_api_key'
+});
+
+socket.connect();
+```
+
+### Subscribing to entities
+
+```typescript
+// Subscribe to event updates
+socket.subscribe('event', eventId, (data) => {
+  console.log('Event updated:', data);
+});
+
+// Subscribe to market updates
+socket.subscribe('market', marketId, (data) => {
+  console.log('Market updated:', data);
+});
+
+// Unsubscribe
+socket.unsubscribe('event', eventId);
+```
+
+### Socket events
+
+<ResponseField name="connect" type="event">
+  Fired when connection is established
+</ResponseField>
+
+<ResponseField name="disconnect" type="event">
+  Fired when connection is lost
+</ResponseField>
+
+<ResponseField name="event:update" type="event">
+  Event data updated
+  
+  ```json
+  {
+    "eventId": "123",
+    "status": "live",
+    "score": "2-1"
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="market:update" type="event">
+  Market odds updated
+  
+  ```json
+  {
+    "marketId": "456",
+    "outcomes": [
+      { "id": "1", "odds": 2.5 },
+      { "id": "2", "odds": 1.8 }
+    ]
+  }
+  ```
+</ResponseField>
+
+## MobX Stores
+
+Access application state via MobX stores.
+
+### Using stores in components
+
+```typescript
+import { observer } from 'mobx-react-lite';
+import { useStore } from '@/lib/mobx';
+
+export const MyComponent = observer(() => {
+  const { betslip, profile, ui } = useStore();
+  
+  return (
+    <div>
+      <p>Bets: {betslip.bets.length}</p>
+      <p>Balance: {profile.balance}</p>
+      <p>Theme: {ui.theme}</p>
+    </div>
+  );
+});
+```
+
+### Available stores
+
+<ResponseField name="betslip" type="BetslipStore">
+  Manages betting slip state
+  
+  - `bets: Bet[]` - Array of bets
+  - `totalOdds: number` - Combined odds
+  - `addBet(outcome)` - Add bet to slip
+  - `removeBet(betId)` - Remove bet
+  - `placeBet()` - Submit bet
+</ResponseField>
+
+<ResponseField name="profile" type="ProfileStore">
+  User profile and authentication
+  
+  - `balance: number` - User balance
+  - `currency: string` - Currency code
+  - `isAuthenticated: boolean` - Auth status
+  - `locale: string` - User language
+</ResponseField>
+
+<ResponseField name="ui" type="UIStore">
+  UI state and preferences
+  
+  - `theme: string` - Current theme
+  - `isMobile: boolean` - Device type
+  - `oddsFormat: string` - Odds display format
+  - `setTheme(theme)` - Change theme
+</ResponseField>
+
+<ResponseField name="line" type="LineStore">
+  Sports events and markets
+  
+  - `events: Event[]` - Available events
+  - `disciplines: Discipline[]` - Sports categories
+  - `getEventById(id)` - Get event by ID
+</ResponseField>
+
+## Widgets
+
+Standalone embeddable widgets.
+
+### Live Top Events Widget
+
+```html
+<div id="live-events-widget"></div>
+
+<script src="/widgets/live-top-events.js"></script>
+<script>
+  LiveTopEventsWidget.init({
+    container: '#live-events-widget',
+    apiKey: 'your_api_key',
+    limit: 10,
+    disciplines: ['football', 'basketball']
+  });
+</script>
+```
+
+### Express Presets Widget
+
+```html
+<div id="express-presets-widget"></div>
+
+<script src="/widgets/express-presets.js"></script>
+<script>
+  ExpressPresetsWidget.init({
+    container: '#express-presets-widget',
+    apiKey: 'your_api_key'
+  });
+</script>
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/fe-desktop/configuration">
+    Configure environment variables
+  </Card>
+  <Card title="Contributing" icon="code-branch" href="/fe-desktop/contributing">
+    Development workflow and testing
+  </Card>
+</CardGroup>
