@@ -1,6 +1,6 @@
 ---
-title: Key behavior and rules
-description: Important behaviors, edge cases, and constraints
+title: "Key behavior and rules"
+description: "Important behaviors, edge cases, and constraints"
 ---
 
 ## Card visibility
@@ -28,8 +28,8 @@ description: Important behaviors, edge cases, and constraints
 
 ## Market state handling
 
-- **Frozen markets**: Show lock icon, disable betting
-- **Removed from line**: Show lock icon, disable betting
+- **Frozen markets**: Show lock icon,hide odds and show text, disable betting
+- **Removed from line**: Show lock icon,hide odds and show text, disable betting
 - **Odds changes**: Automatically reflected in real-time via WebSocket
 - **Market closure**: Card becomes non-bettable but remains visible
 
@@ -51,7 +51,7 @@ description: Important behaviors, edge cases, and constraints
 ## Pagination behavior
 
 - Initial page size: 100 cards
-- Auto-load next page when ≤3 cards remain
+- Auto-load next page when less than 3 cards remain
 - Empty pages trigger automatic next page load
 - Maximum pages: Based on `totalRows / pageSize`
 - Page number increments automatically
@@ -74,8 +74,8 @@ description: Important behaviors, edge cases, and constraints
 
 ## Balance validation
 
-- Bet button disabled if balance < preset amount
-- Bet button disabled if balance < max bet amount
+- Bet button disabled if balance \< preset amount
+- Bet button disabled if balance \< max bet amount
 - Warning banner shows when balance is low
 - Balance updates after successful bet placement
 - Insufficient funds error (errorCode: 2) triggers specific message

@@ -1,6 +1,6 @@
 ---
-title: Configuration
-description: Configuration options and parameters
+title: "Configuration"
+description: "Configuration options and parameters"
 ---
 
 ## API parameters
@@ -19,9 +19,10 @@ interface GetSwipeBetsParams {
 ```
 
 **Example:**
+
 ```typescript
 const response = await getSwipeBets({
-  disciplinesIds: ['1', '2'],  // Football and Basketball
+  disciplinesIds: ['football', 'basketball, dota'],  // Football and Basketball
   excludeIds: ['rec_123'],     // Skip this recommendation
   pageNumber: 1,
   pageSize: 100
@@ -101,7 +102,7 @@ LS.set('swipeBetsTutorialVisited', true);
 LS.get('swipeBetsTutorialVisited');
 
 // Excluded recommendations
-LS.set('swipeBetsExcludedIds', JSON.stringify(['rec_1', 'rec_2']));
+LS.set('swipeBetsExcludedIds', JSON.stringify(['_id1', '_id2']));
 LS.get('swipeBetsExcludedIds');
 ```
 
@@ -122,6 +123,7 @@ interface PreparedBet {
 ```
 
 **Amount logic:**
+
 - Custom tab: Uses `swipeBetsPreset` value
 - Max tab: Uses `swipeBetsMaxBet` value
 - Parsed as float, defaults to 0 if invalid
