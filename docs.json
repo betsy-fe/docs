@@ -15,22 +15,6 @@
         "icon": "desktop",
         "groups": [
           {
-            "group": "Getting started",
-            "pages": [
-              "fe-desktop/introduction",
-              "fe-desktop/installation",
-              "fe-desktop/quickstart"
-            ]
-          },
-          {
-            "group": "Development",
-            "pages": [
-              "fe-desktop/api",
-              "fe-desktop/configuration",
-              "fe-desktop/contributing"
-            ]
-          },
-          {
             "group": "Swipe Bets",
             "pages": [
               "swipe-bets/overview",
