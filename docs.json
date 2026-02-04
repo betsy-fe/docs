@@ -21,15 +21,13 @@
               "swipe-bets-v1/components",
               "swipe-bets-v1/api",
               "swipe-bets-v1/mobx-store",
-              "swipe-bets-v1/flow",
-              "swipe-bets-v1/suggestions"
+              "swipe-bets-v1/flow"
             ]
           },
           {
             "group": "Swipe Bets V2",
             "pages": [
               "swipe-bets-v2/overview",
-              "swipe-bets-v2/how-it-works",
               "swipe-bets-v2/key-behavior",
               "swipe-bets-v2/configuration",
               "swipe-bets-v2/example",
