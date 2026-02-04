@@ -1,0 +1,544 @@
+---
+title: "How it works"
+description: "Technical flow and internal behavior of Swipe Bets"
+---
+
+## Data flow
+
+### 1. Initialization
+
+When a user opens Swipe Bets:
+
+1. Socket connection is established via `Socket.initSocket()`
+2. API request fetches initial recommendations from `/recommendations/swipe-bets` endpoint
+3. First 3 cards are loaded and displayed
+4. WebSocket subscriptions are created for tournaments, events, and markets
+5. Tutorial state is checked from localStorage (`swipeBetsTutorialVisited`)
+6. Custom bet amount preset is loaded from localStorage (`swipeBetsPreset`)
+7. Excluded card IDs are loaded from localStorage (`swipeBetsExcludedIds`)
+
+### 2. Card enrichment
+
+Raw recommendation data is enriched with real-time WebSocket data.
+
+**Raw recommendation structure:**
+- `disciplineId` - Sport/esport identifier
+- `eventId` - Event identifier
+- `eventMarketId` - Market identifier within event
+- `tournamentId` - Tournament identifier
+- `outcomeId` - Specific outcome to bet on
+- `price` - Current odds/coefficient
+- `eventName`, `outcomeName`, `eventMarketName` - Display names
+- `eventDate`, `eventSlug`, `eventTopIndex`, `sortIndex`, `tier` - Metadata
+
+**Enrichment process:**
+1. Construct entity IDs with proper format:
+   - Tournament: `1.{disciplineId}.{tournamentId}`
+   - Event: `1.{eventId}`
+   - Market: `1.{eventId}.{eventMarketId}`
+2. Subscribe to WebSocket entities via `Socket.subscribe()`
+3. Fetch entity data via `getFromWebSocket()`
+4. Match entities to cards based on ID relationships
+5. Validate relationships (event belongs to tournament, market belongs to event)
+6. Filter out cards with missing or mismatched data
+
+**Enriched card structure:**
+- All raw recommendation fields
+- `tournament` - Full tournament entity (name, logo, etc.)
+- `event` - Full event entity (competitors, start time, status)
+- `market` - Full market entity (outcomes, frozen status, prices)
+
+### 3. Card navigation
+
+The system maintains 3 visible cards at a time in a stacked layout:
+
+- **Current card** (index 0): User can swipe or interact with this card
+- **Next card** (index 1): Partially visible behind current card (scaled 97%, offset 2.75%)
+- **Third card** (index 2): Slightly visible behind next card (scaled 94%, offset 5.5%)
+
+**When a card is swiped or skipped:**
+1. Current card animates off screen (300px left or right)
+2. `currentCardIndex` increments
+3. Next cards move forward (indices shift down)
+4. New card loads from the queue at index 2
+5. WebSocket subscriptions update:
+   - Unsubscribe from entities no longer visible
+   - Subscribe to entities for newly visible cards
+   - Reuse existing subscriptions when cards share entities
+6. Card is added to `excludeIds` array and persisted to localStorage
+
+### 4. Bet placement
+
+When user swipes right or clicks the bet button:
+
+1. Card animates to the right (300px)
+2. Bet state changes to `'progress'`
+3. Bet is initialized via `mobx.betslip.initNewBet()` with outcome ID and market ID
+4. Bet amount is determined:
+   - If `swipeBetCurrentTab === 'max'`: Use `swipeBetsMaxBet` value
+   - If `swipeBetCurrentTab === 'custom'`: Use `swipeBetsPreset` value
+5. Bet data is prepared with amount, coefficient, currency, and outcome ID
+6. Bet is validated via `mobx.betslip.valid()`
+7. API call to `/place` endpoint with prepared bet data
+8. Response is processed with retry logic (up to 5 attempts):
+   - **Status 0 (Pending)**: Wait for delay, then call `/process-request` endpoint recursively
+   - **Status 2 (Coefficient changed)**: Show alert with old vs new coefficient
+   - **Error code present**: Set error state, show error overlay
+   - **Success**: Set success state, update balance, move to next card
+9. Analytics events are tracked: `BEGIN_CHECKOUT`, `ADD_BET`, `PLACE_BET` or `REFUND`
+10. Balance is updated via `mobx.profile.updateBalance()`
+11. Card is added to `excludeIds` and next card loads
+
+### 5. Subscription management
+
+WebSocket subscriptions are optimized to minimize overhead.
+
+**On card change:**
+1. Calculate new entity IDs for visible cards (indices 0-2)
+2. Deduplicate IDs (tournaments can be shared between events)
+3. Find IDs to unsubscribe (old IDs not in new IDs)
+4. Find IDs to subscribe (new IDs not in old IDs)
+5. Unsubscribe from removed entities
+6. Subscribe to new entities
+7. Fetch data only for new entities (reuse existing data)
+8. Update stored subscription lists
+
+**Entity types:**
+- `tournament` - Tournament data (name, logo, country)
+- `event` - Event data (competitors, start time, status, scores)
+- `market` - Market data (outcomes, odds, frozen status)
+
+### 6. Pagination
+
+Cards are loaded in batches to ensure smooth experience.
+
+**Initial load:**
+- Fetch 100 cards (default `pageSize`)
+- If page is empty but more pages exist, automatically fetch next page (recursive)
+- Display first 3 cards
+
+**Auto-pagination:**
+- When 3 or fewer cards remain in current page, next page loads automatically
+- `cardsPageNumber` increments
+- New page replaces current page data (not appended)
+- Excluded IDs are sent to avoid showing previously swiped cards
+
+**Empty enriched cards handling:**
+- If visible cards exist but enrichment fails (no WebSocket data), load next page
+- Reset `currentCardIndex` to 0 to start from first card of new page
+- Prevents infinite loop with `hasTriedLoadingNextPageForEmptyCards` flag
+
+### 7. State persistence
+
+User preferences and progress are stored in localStorage.
+
+**Persisted data:**
+- `swipeBetsPreset` - Custom bet amount (string)
+- `swipeBetsTutorialVisited` - Tutorial completion flag (boolean)
+- `swipeBetsExcludedIds` - Array of swiped card IDs (JSON string)
+
+**Persistence timing:**
+- `swipeBetsPreset`: Set manually by UI (not auto-persisted by store)
+- `swipeBetsTutorialVisited`: Persisted immediately when set
+- `swipeBetsExcludedIds`: Persisted immediately when card is added
+
+## Component hierarchy
+
+```
+SwipeBetsPage
+└── ContainerSwipeBet
+    ├── HeaderWrapperSwipeBet
+    │   ├── Balance display
+    │   ├── My Bets link
+    │   ├── Bet amount tabs (Custom / Max)
+    │   └── Warning banner (if low balance)
+    ├── WrapperSwipeBet (if tutorial completed)
+    │   ├── CardsSwipeBet
+    │   │   └── CardSwipeBet (3 instances, stacked)
+    │   │       ├── Card heading (discipline, tournament)
+    │   │       ├── Card matchup (competitors, date/time)
+    │   │       ├── Card content (outcome, odds, possible win)
+    │   │       └── Overlay (progress/success/error states)
+    │   └── ControlsSwipeBet
+    │       ├── Return button (undo last skip)
+    │       ├── Skip button (swipe left)
+    │       └── Bet button (swipe right)
+    └── BodySwipeBetTutorial (if tutorial not completed)
+        ├── WrapperSwipeBetTutorial
+        │   ├── HeaderSwipeBetTutorial
+        │   ├── GuideSwipeBet (animated GIF)
+        │   ├── InputSwipeBetTutorial (bet amount input)
+        │   └── OddsInfoSwipeBet (explanation)
+        ├── ButtonRulesApply (start button)
+        └── KeyboardSwipeBet (when input focused)
+```
+
+## Animation system
+
+Cards use Framer Motion for smooth animations.
+
+**Card positioning (stacked layout):**
+- Z-index: `3 - index` (current card on top, z-index 3)
+- Scale: `1 - (index * 0.03)` (current: 100%, next: 97%, third: 94%)
+- TranslateY: `index * 2.75%` (vertical offset for depth effect)
+
+**Swipe animations:**
+- Drag enabled only for current card (index 0)
+- Drag threshold: 50px (triggers action on release)
+- Animation distance: 300px (card moves off screen)
+- Animation duration: 0.4s
+
+**Swipe right (bet):**
+1. Card animates to +300px
+2. Opacity fades to 0
+3. Bet is processed
+4. On error: Card returns to 0px, opacity 1, error overlay shows
+5. On success: Card stays off screen, next card moves forward
+
+**Swipe left (skip):**
+1. Card animates to -300px
+2. Opacity fades to 0
+3. Card is added to `excludeIds`
+4. Next card moves forward immediately
+
+**Return animation:**
+1. Card animates from -300px to 0px
+2. Opacity fades from 0 to 1
+3. Card is prepended to visible cards
+4. `isCardReturned` flag is set to true for 300ms
+
+**State overlays:**
+- **Progress**: Semi-transparent overlay with spinner, blocks interaction
+- **Success**: Green overlay with checkmark, auto-dismisses after delay
+- **Error**: Red overlay with error icon, card returns to position after 1s
+
+**Animation constraints:**
+- `isAnimationInProgress` flag prevents multiple simultaneous animations
+- Flag is set for 400ms during swipe animations
+- Prevents rapid button clicks from breaking state
+
+## Error handling and recovery
+
+### Validation errors
+
+**Invalid bet amount:**
+- Checked before API call via `mobx.betslip.isValidBetAmount()`
+- Returns error response without making API call
+- Error code: `'invalidAmount'`
+
+**Insufficient balance:**
+- Bet button is disabled when balance < bet amount
+- Warning banner shows at top of screen
+- User can deposit or reduce bet amount
+
+**Frozen market:**
+- Lock icon shows on card
+- Bet button is disabled
+- Tooltip explains market is suspended
+- Card can only be skipped, not bet on
+
+**Market not in line:**
+- Checked via `isMarketInLine` computed property
+- Same behavior as frozen market
+- Prevents betting on removed markets
+
+### API errors
+
+**Network error:**
+- Error overlay shows on card
+- Card returns to original position after 1s
+- Error state clears automatically
+- User can retry or skip the card
+
+**Bet rejection:**
+- Error message shows in overlay
+- Card returns to original position
+- Error code is tracked in analytics
+- Specific handling for error code 2 (insufficient funds)
+
+**Timeout / pending status:**
+- Retries up to 5 times with delay
+- Each retry calls `/process-request` endpoint
+- Delay is provided by API response
+- After 5 retries, treats as error
+
+**Coefficient change (status 2):**
+- Alert shows old vs new coefficient
+- User is notified but bet continues processing
+- Bet is placed with new coefficient
+- Analytics tracks coefficient change
+
+### Recovery
+
+**Error state clearing:**
+- Error overlay shows for 1 second
+- Card returns to original position
+- `hasSwipeBetError` flag is cleared
+- Bet state resets to empty string
+
+**Card return:**
+- User can undo last skip via return button
+- Card animates back from -300px
+- WebSocket data is re-fetched for returned card
+- Card is prepended to visible cards (max 3 total)
+
+**Empty cards handling:**
+- If enrichment fails, next page is loaded automatically
+- Prevents showing empty screen to user
+- Resets index to start from first card of new page
+
+## Public API (MobX store)
+
+The SwipeBets store exposes the following public actions for UI components and other stores.
+
+### initSocketConnection()
+
+Establishes WebSocket connection for real-time data updates.
+
+**Arguments:** None
+
+**Side effects:**
+- Initializes Socket connection via `Socket.initSocket()`
+- Logs error to console if connection fails
+
+**Constraints:**
+- Safe to call multiple times (Socket handles duplicate initialization)
+- Does not throw errors, only logs them
+
+### getSwipeBetsData({ disciplinesIds, excludeIds, pageSize })
+
+Fetches initial batch of betting recommendations and subscribes to their entities.
+
+**Arguments:**
+- `disciplinesIds` (string[], optional) - Filter recommendations by discipline IDs. Empty array = all disciplines. Default: `[]`
+- `excludeIds` (string[], optional) - Exclude specific recommendation IDs. Default: uses `this.excludeIds` from localStorage
+- `pageSize` (number, optional) - Number of recommendations per page. Default: `100`
+
+**Side effects:**
+- Calls `initSocketConnection()` to ensure WebSocket is ready
+- Fetches recommendations from `/recommendations/swipe-bets` API
+- Unsubscribes from all previous WebSocket entities
+- Subscribes to tournament, event, and market entities for first 3 cards
+- Updates `swipeBetsData`, `visibleCards`, and enrichment data
+- If page is empty but more pages exist, automatically fetches next page (recursive)
+- Stores request params in `lastRequestParams` for pagination
+
+**Constraints:**
+- Only one initial load can run at a time (guarded by `isLoadingInitialCards`)
+- Returns early if already loading
+- Automatically skips empty pages until data is found or max pages reached
+
+### loadMoreSwipeBets({ disciplinesIds, excludeIds, pageNumber, pageSize })
+
+Loads additional recommendations for pagination.
+
+**Arguments:**
+- `disciplinesIds` (string[], optional) - Filter by discipline IDs. Default: `[]`
+- `excludeIds` (string[], optional) - Exclude specific IDs. Default: uses `this.excludeIds`
+- `pageNumber` (number, optional) - Page to fetch. Default: `1`
+- `pageSize` (number, optional) - Items per page. Default: `100`
+
+**Side effects:**
+- Fetches next page from `/recommendations/swipe-bets`
+- Replaces `swipeBetsData.data` with new page data (does not append)
+- Updates `swipeBetsData.meta` with new pagination info
+
+**Constraints:**
+- Only one pagination request at a time (guarded by `isLoadingMoreCards`)
+- Requires `swipeBetsData` to exist (returns early if null)
+- Does nothing if response is empty or fails
+
+### updateVisibleCards()
+
+Advances to next set of cards and manages WebSocket subscriptions.
+
+**Arguments:** None
+
+**Side effects:**
+- Increments `currentCardIndex` (unless returning a card)
+- Extracts next 3 cards from `swipeBetsData`
+- Unsubscribes from entities no longer visible
+- Subscribes to entities for new visible cards
+- Updates `visibleCards`, `swipeBetsTournaments`, `swipeBetsEvents`, `swipeBetsMarkets`
+- If ≤3 cards remain, automatically calls `loadMoreSwipeBets()` for next page
+- Clears all data if no visible cards remain
+
+**Constraints:**
+- Subscription changes are optimized (only subscribe/unsubscribe deltas)
+- Reuses existing subscriptions when cards share entities
+- Auto-pagination triggers when running low on cards
+
+### handleSwipeBet(marketId, outcomeId)
+
+Places a bet on the current card and processes the result.
+
+**Arguments:**
+- `marketId` (string) - Market identifier for the bet
+- `outcomeId` (string) - Outcome identifier to bet on
+
+**Side effects:**
+- Sets `isWaitingSwipeBet = true` and `hasSwipeBetError = false`
+- Calls `makeSwipeBet()` to create and place bet
+- Tracks analytics: `BEGIN_CHECKOUT`, `ADD_BET`, `PLACE_BET` or `REFUND`
+- Processes bet response with retry logic (up to 5 attempts)
+- Updates user balance via `mobx.profile.updateBalance()`
+- Sets `swipeBetData` during processing, clears it when done
+- Updates `hasSwipeBetError` based on result
+
+**Returns:**
+- Object with `{ delay: number, hasError: boolean, status: number }`
+
+**Constraints:**
+- Only one bet can be processed at a time (returns error if `swipeBetData` exists)
+- Validates bet amount before API call
+- Retries pending bets (status 0) up to 5 times with delay
+- Sends postMessage events for partner integration
+- Handles coefficient changes (status 2) with alert
+
+### returnLastRemovedCard()
+
+Restores the last skipped card to the top of the stack.
+
+**Arguments:** None
+
+**Side effects:**
+- Decrements `currentCardIndex` if > 0
+- Fetches WebSocket data for returned card's entities
+- Prepends card to `visibleCards` (max 3 cards)
+- Updates `swipeBetsTournaments`, `swipeBetsEvents`, `swipeBetsMarkets`
+- Adds entity IDs to subscription lists
+- Sets `isCardReturned = true`
+- Clears `lastRemovedCard`
+
+**Constraints:**
+- Only works if `lastRemovedCard` exists
+- Returns early if no card to restore
+- Removes 4th card if stack exceeds 3 cards
+
+### getCurrentMaxBet()
+
+Calculates maximum allowed bet amount for current card.
+
+**Arguments:** None
+
+**Side effects:**
+- Initializes bet via `mobx.betslip.initNewBet()`
+- Calls `/max-bet` API with outcome ID and currency
+- Updates `swipeBetsMaxBet` with result
+- Sets `swipeBetsMaxBet = null` if no current card
+
+**Constraints:**
+- Requires `enrichedCards[0]` to exist
+- Uses current user's currency from profile
+
+### getSwipeBetPossibleWin(amount, odd)
+
+Calculates potential winnings for a bet.
+
+**Arguments:**
+- `amount` (number) - Bet amount
+- `odd` (number) - Outcome odds/coefficient
+
+**Side effects:** None (pure calculation)
+
+**Returns:**
+- Rounded currency value of `amount * odd`
+- Uses `swipeBetsMaxBet` if `swipeBetCurrentTab === 'max'`
+- Uses provided `amount` if `swipeBetCurrentTab === 'custom'`
+
+**Constraints:**
+- Returns 0 if calculation fails
+- Respects currency precision via `roundCurrency()`
+
+### setSwipeBetsPreset(value)
+
+Sets custom bet amount for swipe bets.
+
+**Arguments:**
+- `value` (string) - Bet amount as string
+
+**Side effects:**
+- Updates `swipeBetsPreset` in memory
+- Does NOT persist to localStorage (UI must call `LS.set()` separately)
+
+**Constraints:**
+- Accepts any string value (validation happens elsewhere)
+
+### getSwipeBetsPreset()
+
+Retrieves current custom bet amount.
+
+**Arguments:** None
+
+**Returns:**
+- Current `swipeBetsPreset` value (string | null)
+
+**Side effects:** None
+
+### setSwipeBetsTutorialVisited(value)
+
+Marks tutorial as completed or not completed.
+
+**Arguments:**
+- `value` (boolean) - Tutorial completion status
+
+**Side effects:**
+- Updates `swipeBetsTutorialVisited` in memory
+- Persists to localStorage via `LS.set('swipeBetsTutorialVisited', value)`
+
+**Constraints:**
+- Persists immediately to localStorage
+
+### getSwipeBetsTutorialVisited()
+
+Checks if user has completed the tutorial.
+
+**Arguments:** None
+
+**Returns:**
+- Current `swipeBetsTutorialVisited` value (boolean)
+
+**Side effects:** None
+
+### addExcludedId(id)
+
+Adds a recommendation ID to the exclusion list.
+
+**Arguments:**
+- `id` (string) - Recommendation ID to exclude
+
+**Side effects:**
+- Appends `id` to `excludeIds` array (if not already present)
+- Persists updated array to localStorage via `LS.set('swipeBetsExcludedIds')`
+
+**Constraints:**
+- Ignores empty/falsy IDs
+- Prevents duplicates
+- Silently catches localStorage errors
+
+## Computed properties
+
+### enrichedCards
+
+Returns visible cards enriched with WebSocket data.
+
+**Returns:**
+- Array of enriched cards with tournament, event, and market data
+- Filters out cards with missing or mismatched entity relationships
+- Validates event belongs to tournament and market belongs to event
+
+**Constraints:**
+- Only returns cards where all entities exist and relationships are valid
+- Cards with missing data are silently filtered out
+
+### isMarketInLine
+
+Checks if current card's market is still available for betting.
+
+**Returns:**
+- `true` if market exists in `mobx.store.markets`
+- `false` otherwise
+
+**Constraints:**
+- Requires `enrichedCards[0]` to exist
+- Returns `undefined` if no current card
