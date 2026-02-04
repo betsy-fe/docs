@@ -216,8 +216,16 @@ const precision = mobx.profile.currency.precision;
 const minBet = 1.00;  // Configurable per currency
 
 // Maximum bet amount
+const queryString = (() => {
+  const params = new URLSearchParams();
+  params.append('outcomeIds[]', bet.id);
+  params.append('currency', mobx.profile.currency.name);
+
+  return params.toString();
+})();
+
 const maxBet = await getMaxBet({
-  queryString: `outcomeIds[]=${outcomeId}&currency=${currency}`,
+  queryString,
   setIsLoading: () => {}
 });
 
