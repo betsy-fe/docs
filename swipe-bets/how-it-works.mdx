@@ -209,7 +209,7 @@ Establishes WebSocket connection for real-time data updates.
 - Safe to call multiple times (Socket handles duplicate initialization)
 - Does not throw errors, only logs them
 
-### getSwipeBetsData({ disciplinesIds?, excludeIds?, pageSize? })
+### getSwipeBetsData({ disciplinesIds, excludeIds, pageSize })
 
 Fetches initial batch of betting recommendations and subscribes to their entities.
 
@@ -232,7 +232,7 @@ Fetches initial batch of betting recommendations and subscribes to their entitie
 - Returns early if already loading
 - Automatically skips empty pages until data is found or max pages reached
 
-### loadMoreSwipeBets({ disciplinesIds?, excludeIds?, pageNumber?, pageSize? })
+### loadMoreSwipeBets({ disciplinesIds, excludeIds, pageNumber, pageSize })
 
 Loads additional recommendations for pagination.
 
