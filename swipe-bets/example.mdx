@@ -1,6 +1,6 @@
 ---
-title: Example
-description: Complete implementation example
+title: "Example"
+description: "Complete implementation example"
 ---
 
 ## Complete implementation
@@ -263,20 +263,6 @@ const amount = mobx.swipeBets.swipeBetCurrentTab === 'max'
 const possibleWin = mobx.swipeBets.getSwipeBetPossibleWin(amount, outcome.price);
 
 console.log(`Bet: ${amount}, Odds: ${outcome.price}, Win: ${possibleWin}`);
-```
-
-## Managing exclusions
-
-```typescript
-// Add card to exclusions
-mobx.swipeBets.addExcludedId('rec_123');
-
-// Get all excluded IDs
-console.log(mobx.swipeBets.excludeIds);
-
-// Clear exclusions (requires localStorage access)
-LS.remove('swipeBetsExcludedIds');
-mobx.swipeBets.excludeIds = [];
 ```
 
 ## Checking market availability
