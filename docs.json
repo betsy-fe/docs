@@ -15,14 +15,19 @@
         "icon": "desktop",
         "groups": [
           {
-            "group": "Swipe Bets",
+            "group": "Swipe Bets V1",
             "pages": [
               "swipe-bets-v1/overview",
               "swipe-bets-v1/components",
               "swipe-bets-v1/api",
               "swipe-bets-v1/mobx-store",
               "swipe-bets-v1/flow",
-              "swipe-bets-v1/suggestions",
+              "swipe-bets-v1/suggestions"
+            ]
+          },
+          {
+            "group": "Swipe Bets V2",
+            "pages": [
               "swipe-bets-v2/overview",
               "swipe-bets-v2/how-it-works",
               "swipe-bets-v2/key-behavior",
