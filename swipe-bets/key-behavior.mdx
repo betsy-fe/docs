@@ -1,0 +1,142 @@
+---
+title: Key behavior and rules
+description: Important behaviors, edge cases, and constraints
+---
+
+## Card visibility
+
+- Exactly 3 cards are visible at any time
+- Only the top card (index 0) is interactive
+- Cards behind are scaled down and offset for visual depth
+- When fewer than 3 cards remain in queue, next page loads automatically
+
+## Swipe gestures
+
+- **Right swipe (>50px)**: Places bet on the outcome
+- **Left swipe (<-50px)**: Skips the card without betting
+- **Insufficient swipe**: Card returns to center position
+- Swipe threshold: 150px for full animation
+- Drag is disabled during bet processing
+
+## Bet amount logic
+
+- **Custom tab**: Uses preset amount from `swipeBetsPreset`
+- **Max tab**: Calculates maximum bet via `/max-bet` endpoint
+- Amount must be ≥ minimum bet (typically 1.00)
+- Amount must be ≤ user's current balance
+- Invalid amounts disable the bet button
+
+## Market state handling
+
+- **Frozen markets**: Show lock icon, disable betting
+- **Removed from line**: Show lock icon, disable betting
+- **Odds changes**: Automatically reflected in real-time via WebSocket
+- **Market closure**: Card becomes non-bettable but remains visible
+
+## Subscription lifecycle
+
+- Subscribe to entities when cards become visible
+- Unsubscribe when cards are no longer in top 3
+- Reuse subscriptions for entities that remain visible
+- Subscriptions persist across card changes when possible
+
+## Excluded cards
+
+- Swiped cards are added to `excludeIds` array
+- Excluded IDs persist in localStorage
+- Excluded IDs are sent with every API request
+- Maximum excluded IDs stored: unlimited (array grows)
+- Clearing localStorage resets exclusions
+
+## Pagination behavior
+
+- Initial page size: 100 cards
+- Auto-load next page when ≤3 cards remain
+- Empty pages trigger automatic next page load
+- Maximum pages: Based on `totalRows / pageSize`
+- Page number increments automatically
+
+## Tutorial flow
+
+- Tutorial shows on first visit (`swipeBetsTutorialVisited === false`)
+- User must set a bet amount to proceed
+- Minimum bet amount: 1.00 (configurable by currency)
+- Tutorial completion persists in localStorage
+- Tutorial can be reset by clearing localStorage
+
+## Return card functionality
+
+- Only the last swiped card can be returned
+- Return is only available for left-swiped (skipped) cards
+- Right-swiped (bet) cards cannot be returned
+- Returning a card re-subscribes to its entities
+- Return button is disabled during animations
+
+## Balance validation
+
+- Bet button disabled if balance < preset amount
+- Bet button disabled if balance < max bet amount
+- Warning banner shows when balance is low
+- Balance updates after successful bet placement
+- Insufficient funds error (errorCode: 2) triggers specific message
+
+## Animation constraints
+
+- Only one animation can run at a time (`isAnimationInProgress`)
+- Animation duration: 400ms for swipes
+- Overlay animations: 1000ms for success/error states
+- Card return animation: 300ms
+- All interactions disabled during animations
+
+## Bet processing states
+
+- **Progress**: Bet is being placed, overlay shows spinner
+- **Success**: Bet placed successfully, green overlay for 1s
+- **Error**: Bet failed, red overlay for 1s, card returns
+- **Pending (status: 0)**: Retries up to 5 times with delay
+- **Coefficient changed (status: 2)**: Shows alert, continues processing
+
+## WebSocket data matching
+
+- Cards require matching tournament, event, and market data
+- Event must belong to the tournament (`event.pid === tournament.lid`)
+- Market must belong to the event (`market.lid.startsWith(event.lid)`)
+- Cards with mismatched data are filtered out
+- Missing entities cause cards to be skipped
+
+## Error recovery
+
+- Network errors: Card returns, user can retry
+- Validation errors: Shown immediately, no API call
+- API errors: Shown after response, card returns
+- Timeout errors: Retry with exponential backoff
+- Error state clears automatically after 1 second
+
+## Concurrent bet prevention
+
+- Only one bet can be processed at a time
+- New swipes are blocked while `swipeBetData` exists
+- `isWaitingSwipeBet` flag prevents duplicate requests
+- Processing counter resets after completion
+
+## Empty enriched cards
+
+- If visible cards exist but enriched cards are empty, system loads next page
+- This handles cases where WebSocket data is unavailable
+- Flag `hasTriedLoadingNextPageForEmptyCards` prevents infinite loops
+- Current index resets to 0 when loading new page
+
+## Discipline filtering
+
+- Recommendations can be filtered by discipline IDs
+- Empty array means all disciplines
+- Filter is applied on API request
+- Filter persists across pagination
+
+## Analytics tracking
+
+- `ADD_BET`: When bet is added to betslip
+- `BEGIN_CHECKOUT`: When bet placement starts
+- `PLACE_BET`: When bet is successfully placed
+- `REFUND`: When bet fails with error
+- All events include `currentBetType: 'swipe_bet'`
