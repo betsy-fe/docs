@@ -1,0 +1,285 @@
+---
+title: "Example"
+description: "Complete implementation example"
+---
+
+## Complete implementation
+
+This example shows how to initialize and use Swipe Bets in a React component.
+
+```typescript
+import { useEffect, useState } from 'react';
+import { observer } from 'mobx-react-lite';
+import { mobx } from '@/lib/mobx';
+
+export const SwipeBetsExample = observer(() => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [betState, setBetState] = useState<'progress' | 'success' | 'error' | ''>('');
+
+  useEffect(() => {
+    const initializeSwipeBets = async () => {
+      try {
+        // Initialize socket connection
+        await mobx.swipeBets.initSocketConnection();
+
+        // Load initial recommendations
+        await mobx.swipeBets.getSwipeBetsData({
+          disciplinesIds: [], // All disciplines
+          pageSize: 100
+        });
+
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Failed to initialize Swipe Bets:', error);
+      }
+    };
+
+    initializeSwipeBets();
+  }, []);
+
+  // Handle bet placement
+  const handleBet = async (marketId: string, outcomeId: string) => {
+    setBetState('progress');
+
+    const result = await mobx.swipeBets.handleSwipeBet(marketId, outcomeId);
+
+    if (result.hasError) {
+      setBetState('error');
+      setTimeout(() => setBetState(''), 1000);
+    } else {
+      setBetState('success');
+      setTimeout(() => setBetState(''), 1000);
+    }
+  };
+
+  // Handle skip
+  const handleSkip = async () => {
+    const currentCard = mobx.swipeBets.enrichedCards[0];
+    if (currentCard) {
+      mobx.swipeBets.addExcludedId(currentCard._id);
+      await mobx.swipeBets.updateVisibleCards();
+    }
+  };
+
+  // Handle return
+  const handleReturn = async () => {
+    if (mobx.swipeBets.lastRemovedCard) {
+      await mobx.swipeBets.returnLastRemovedCard();
+    }
+  };
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  const currentCard = mobx.swipeBets.enrichedCards[0];
+
+  if (!currentCard) {
+    return <div>No recommendations available</div>;
+  }
+
+  return (
+    <div className="swipe-bets-container">
+      {/* Card display */}
+      <div className="card">
+        <h3>{currentCard.event.name}</h3>
+        <p>{currentCard.market.name}</p>
+        <p>Outcome: {currentCard.outcomeName}</p>
+        <p>Odds: {currentCard.price}</p>
+      </div>
+
+      {/* Controls */}
+      <div className="controls">
+        <button 
+          onClick={handleReturn}
+          disabled={!mobx.swipeBets.lastRemovedCard}
+        >
+          Return
+        </button>
+        <button onClick={handleSkip}>
+          Skip
+        </button>
+        <button 
+          onClick={() => handleBet(currentCard.market.lid, currentCard.outcomeId)}
+          disabled={betState === 'progress'}
+        >
+          Bet
+        </button>
+      </div>
+
+      {/* State overlay */}
+      {betState === 'progress' && <div>Processing bet...</div>}
+      {betState === 'success' && <div>Bet placed successfully!</div>}
+      {betState === 'error' && <div>Bet failed. Please try again.</div>}
+    </div>
+  );
+});
+```
+
+## Setting bet amount
+
+```typescript
+// Set custom bet amount
+mobx.swipeBets.setSwipeBetsPreset('10.00');
+
+// Get current preset
+const preset = mobx.swipeBets.getSwipeBetsPreset();
+console.log(preset); // "10.00"
+
+// Calculate max bet for current card
+await mobx.swipeBets.getCurrentMaxBet();
+console.log(mobx.swipeBets.swipeBetsMaxBet); // 50.00
+
+// Switch to max bet tab
+mobx.swipeBets.swipeBetCurrentTab = 'max';
+```
+
+## Filtering by discipline
+
+```typescript
+// Load only football recommendations
+await mobx.swipeBets.getSwipeBetsData({
+  disciplinesIds: ['1'], // Football
+  pageSize: 100
+});
+
+// Load football and basketball
+await mobx.swipeBets.getSwipeBetsData({
+  disciplinesIds: ['1', '2'],
+  pageSize: 100
+});
+
+// Load all disciplines
+await mobx.swipeBets.getSwipeBetsData({
+  disciplinesIds: [],
+  pageSize: 100
+});
+```
+
+## Handling tutorial
+
+```typescript
+// Check if tutorial was completed
+const tutorialCompleted = mobx.swipeBets.getSwipeBetsTutorialVisited();
+
+if (!tutorialCompleted) {
+  // Show tutorial
+  return <SwipeBetTutorial />;
+}
+
+// Mark tutorial as completed
+mobx.swipeBets.setSwipeBetsTutorialVisited(true);
+```
+
+## Manual pagination
+
+```typescript
+// Load next page
+await mobx.swipeBets.loadMoreSwipeBets({
+  disciplinesIds: [],
+  pageNumber: 2,
+  pageSize: 100
+});
+
+// Check loading state
+console.log(mobx.swipeBets.isLoadingMoreCards); // true/false
+
+// Check current page
+console.log(mobx.swipeBets.cardsPageNumber); // 2
+```
+
+## Accessing enriched cards
+
+```typescript
+// Get all visible enriched cards
+const cards = mobx.swipeBets.enrichedCards;
+
+// Get current card
+const currentCard = cards[0];
+
+// Access card data
+console.log(currentCard.tournament.name);
+console.log(currentCard.event.competitors);
+console.log(currentCard.market.outcomes);
+
+// Check if market is frozen
+const isFrozen = currentCard.market.isFrozen;
+
+// Get outcome details
+const outcome = currentCard.market.outcomes.find(
+  o => o.id === currentCard.outcomeId
+);
+console.log(outcome.price); // Current odds
+```
+
+## Error handling
+
+```typescript
+const handleBetWithErrorHandling = async (marketId: string, outcomeId: string) => {
+  try {
+    // Validate balance
+    const preset = Number(mobx.swipeBets.getSwipeBetsPreset());
+    if (preset > mobx.profile.balance) {
+      alert('Insufficient balance');
+      return;
+    }
+
+    // Place bet
+    const result = await mobx.swipeBets.handleSwipeBet(marketId, outcomeId);
+
+    if (result.hasError) {
+      // Check error code
+      const errorCode = mobx.swipeBets.swipeBetData?.errorCode;
+      
+      if (errorCode === 2) {
+        alert('Insufficient funds');
+      } else {
+        alert('Bet placement failed');
+      }
+    } else {
+      alert('Bet placed successfully');
+    }
+  } catch (error) {
+    console.error('Unexpected error:', error);
+    alert('An error occurred');
+  }
+};
+```
+
+## Calculating possible win
+
+```typescript
+const currentCard = mobx.swipeBets.enrichedCards[0];
+const outcome = currentCard.market.outcomes.find(
+  o => o.id === currentCard.outcomeId
+);
+
+// Get bet amount
+const amount = mobx.swipeBets.swipeBetCurrentTab === 'max'
+  ? mobx.swipeBets.swipeBetsMaxBet
+  : Number(mobx.swipeBets.getSwipeBetsPreset());
+
+// Calculate possible win
+const possibleWin = mobx.swipeBets.getSwipeBetPossibleWin(amount, outcome.price);
+
+console.log(`Bet: ${amount}, Odds: ${outcome.price}, Win: ${possibleWin}`);
+```
+
+## Checking market availability
+
+```typescript
+const currentCard = mobx.swipeBets.enrichedCards[0];
+
+// Check if market is in line
+const isInLine = mobx.swipeBets.isMarketInLine;
+
+// Check if market is frozen
+const isFrozen = currentCard.market.isFrozen;
+
+// Check if betting is allowed
+const canBet = isInLine && !isFrozen;
+
+if (!canBet) {
+  console.log('Betting is not available for this market');
+}
+```

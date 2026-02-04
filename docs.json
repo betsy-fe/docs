@@ -32,7 +32,14 @@
           },
           {
             "group": "Swipe Bets",
-            "pages": []
+            "pages": [
+              "swipe-bets/overview",
+              "swipe-bets/how-it-works",
+              "swipe-bets/key-behavior",
+              "swipe-bets/configuration",
+              "swipe-bets/example",
+              "swipe-bets/limitations"
+            ]
           }
         ]
       }

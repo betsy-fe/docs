@@ -1,0 +1,234 @@
+---
+title: "Configuration"
+description: "Configuration options and parameters"
+---
+
+## API parameters
+
+### getSwipeBets()
+
+Fetches personalized betting recommendations.
+
+```typescript
+interface GetSwipeBetsParams {
+  disciplinesIds?: string[];  // Filter by discipline IDs
+  excludeIds?: string[];      // Exclude specific recommendation IDs
+  pageNumber?: number;        // Page number (default: 1)
+  pageSize?: number;          // Items per page (default: 100)
+}
+```
+
+**Example:**
+
+```typescript
+const response = await getSwipeBets({
+  disciplinesIds: ['football', 'basketball, dota'],  // Football and Basketball
+  excludeIds: ['rec_123'],     // Skip this recommendation
+  pageNumber: 1,
+  pageSize: 100
+});
+```
+
+## State management
+
+### MobX store properties
+
+```typescript
+class SwipeBets {
+  // Data
+  swipeBets: ISwipeBetItem[];              // Raw recommendations
+  visibleCards: ISwipeBetItem[];           // Currently visible cards (3)
+  enrichedCards: IEnrichedSwipeBetCard[];  // Cards with WebSocket data
+  
+  // User preferences
+  swipeBetsPreset: string | null;          // Custom bet amount
+  swipeBetsTutorialVisited: boolean;       // Tutorial completion
+  swipeBetCurrentTab: 'custom' | 'max';    // Selected bet type
+  
+  // Pagination
+  cardsPageNumber: number;                 // Current page (starts at 1)
+  isLoadingMoreCards: boolean;             // Loading state
+  isLoadingInitialCards: boolean;          // Initial load state
+  
+  // Bet processing
+  swipeBetData: any;                       // Current bet response
+  hasSwipeBetError: boolean;               // Error state
+  isWaitingSwipeBet: boolean;              // Processing state
+  processRequestCounter: number;           // Retry counter (max: 5)
+  
+  // Card management
+  lastRemovedCard: IEnrichedSwipeBetCard | null;  // For undo
+  currentCardIndex: number;                        // Current position
+  isCardReturned: boolean;                         // Return animation flag
+  isAnimationInProgress: boolean;                  // Animation lock
+  
+  // WebSocket
+  subscribedMarketIds: string[];           // Active market subscriptions
+  subscribedEventIds: string[];            // Active event subscriptions
+  subscribedTournamentIds: string[];       // Active tournament subscriptions
+  
+  // Exclusions
+  excludeIds: string[];                    // Excluded recommendation IDs
+}
+```
+
+## Constants
+
+### Animation timing
+
+```typescript
+const SWIPE_THRESHOLD = 150;        // Pixels to trigger swipe
+const DEFAULT_DELAY = 1000;         // Overlay display duration (ms)
+const CARD_OFFSET_PERCENT = 2.75;   // Vertical offset between cards (%)
+const MAX_PROCESS_REQUESTS = 5;     // Maximum retry attempts
+```
+
+### Card positioning
+
+```typescript
+const startIndex = 3;               // Z-index for top card
+const scaleReduction = 0.03;        // Scale reduction per card
+```
+
+## LocalStorage keys
+
+```typescript
+// Bet amount preset
+LS.set('swipeBetsPreset', '10.00');
+LS.get('swipeBetsPreset');
+
+// Tutorial completion
+LS.set('swipeBetsTutorialVisited', true);
+LS.get('swipeBetsTutorialVisited');
+
+// Excluded recommendations
+LS.set('swipeBetsExcludedIds', JSON.stringify(['_id1', '_id2']));
+LS.get('swipeBetsExcludedIds');
+```
+
+## Bet preparation
+
+### prepareSwipeBet()
+
+Converts bet object to API format:
+
+```typescript
+interface PreparedBet {
+  amount: number;           // Bet amount
+  coefficient: number;      // Outcome odds
+  currency: string;         // User's currency
+  outcomeId: string;        // Outcome identifier
+  trackMarks: string[];     // Analytics markers
+}
+```
+
+**Amount logic:**
+
+- Custom tab: Uses `swipeBetsPreset` value
+- Max tab: Uses `swipeBetsMaxBet` value
+- Parsed as float, defaults to 0 if invalid
+
+## WebSocket entity IDs
+
+### ID construction
+
+```typescript
+// Tournament ID
+const tournamentId = `1.${disciplineId}.${tournamentId}`;
+// Example: "1.1.12345"
+
+// Event ID
+const eventId = `1.${eventId}`;
+// Example: "1.67890"
+
+// Market ID
+const marketId = `${eventId}.${eventMarketId}`;
+// Example: "1.67890.123"
+```
+
+## Bet placement options
+
+### makeSwipeBet()
+
+```typescript
+interface MakeSwipeBetParams {
+  outcomeId: string;              // Outcome to bet on
+  marketId: string;               // Market containing outcome
+  trackMarks?: string[];          // Analytics markers (default: ['swipe_bet'])
+  bubblePostMessage?: boolean;    // Send postMessage events (default: true)
+}
+```
+
+## Response handling
+
+### Bet status codes
+
+```typescript
+// Status 0: Pending, retry after delay
+if (status === 0) {
+  await timeout(delay);
+  return await processRequest(betId);
+}
+
+// Status 2: Coefficient changed
+if (status === 2) {
+  emitCefChangedAlert(newCoef, oldCoef);
+}
+
+// Error codes
+if (errorCode === 2) {
+  // Insufficient funds
+  sendMsg('placeBetFailure', {
+    status: 'notEnoughMoney',
+    statusId: 2
+  });
+}
+```
+
+## Default values
+
+```typescript
+const defaultParams = {
+  disciplinesIds: [],      // All disciplines
+  excludeIds: [],          // No exclusions
+  pageNumber: 1,           // First page
+  pageSize: 100,           // 100 cards per page
+};
+```
+
+## Feature flags
+
+Currently no feature flags are used. The feature is enabled/disabled at the routing level.
+
+## Currency precision
+
+Bet amounts respect currency precision:
+
+```typescript
+const precision = mobx.profile.currency.precision;
+// Used in formatBetslipInputValue()
+```
+
+## Validation rules
+
+```typescript
+// Minimum bet amount
+const minBet = 1.00;  // Configurable per currency
+
+// Maximum bet amount
+const queryString = (() => {
+  const params = new URLSearchParams();
+  params.append('outcomeIds[]', bet.id);
+  params.append('currency', mobx.profile.currency.name);
+
+  return params.toString();
+})();
+
+const maxBet = await getMaxBet({
+  queryString,
+  setIsLoading: () => {}
+});
+
+// Balance check
+const isValid = amount <= mobx.profile.balance;
+```
