@@ -1,0 +1,585 @@
+---
+title: User flow
+description: Complete user flow diagrams and scenarios for Swipe Bets feature
+---
+
+# User flow
+
+This document provides detailed flow diagrams and scenarios for all user interactions with the Swipe Bets feature.
+
+## Complete user journey
+
+```mermaid
+flowchart TD
+    Start([User opens Swipe Bets]) --> CheckTutorial{Tutorial<br/>completed?}
+    
+    CheckTutorial -->|No| Tutorial[Show Tutorial]
+    CheckTutorial -->|Yes| LoadCards[Load Recommendations]
+    
+    Tutorial --> TutorialSteps[Tutorial Steps]
+    TutorialSteps --> SetAmount[Set Bet Amount]
+    SetAmount --> MarkComplete[Mark Tutorial Complete]
+    MarkComplete --> LoadCards
+    
+    LoadCards --> InitSocket[Initialize WebSocket]
+    InitSocket --> FetchAPI[Fetch from API]
+    FetchAPI --> Subscribe[Subscribe to Entities]
+    Subscribe --> EnrichCards[Enrich Cards]
+    EnrichCards --> DisplayCards[Display 3 Cards]
+    
+    DisplayCards --> UserAction{User Action}
+    
+    UserAction -->|Swipe Right| PlaceBet[Place Bet]
+    UserAction -->|Swipe Left| SkipCard[Skip Card]
+    UserAction -->|Click Undo| UndoCard[Return Last Card]
+    UserAction -->|Change Amount| UpdateAmount[Update Bet Amount]
+    
+    PlaceBet --> ValidateBet{Valid Bet?}
+    ValidateBet -->|No| ShowError[Show Error]
+    ValidateBet -->|Yes| SendBet[Send to API]
+    
+    SendBet --> ProcessBet{Bet Status}
+    ProcessBet -->|Pending| WaitRetry[Wait & Retry]
+    ProcessBet -->|Success| ShowSuccess[Show Success]
+    ProcessBet -->|Coef Changed| ShowAlert[Show Coefficient Alert]
+    ProcessBet -->|Error| ShowError
+    
+    WaitRetry --> ProcessBet
+    ShowSuccess --> UpdateBalance[Update Balance]
+    ShowAlert --> UpdateBalance
+    ShowError --> NextCard
+    
+    UpdateBalance --> NextCard[Move to Next Card]
+    SkipCard --> NextCard
+    UndoCard --> DisplayCards
+    UpdateAmount --> DisplayCards
+    
+    NextCard --> CheckMore{More Cards?}
+    CheckMore -->|Yes| UpdateVisible[Update Visible Cards]
+    CheckMore -->|No| LoadMore[Load More Cards]
+    
+    UpdateVisible --> DisplayCards
+    LoadMore --> FetchAPI
+```
+
+## First-time user flow
+
+### Tutorial experience
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Tutorial UI
+    participant Store as MobX Store
+    participant LS as LocalStorage
+    
+    User->>UI: Opens Swipe Bets
+    UI->>Store: Check tutorial status
+    Store->>LS: Get 'swipeBetsTutorialVisited'
+    LS-->>Store: false
+    Store-->>UI: Show tutorial
+    
+    UI->>User: Display welcome screen
+    User->>UI: Click "Next"
+    
+    UI->>User: Show swipe left demo
+    User->>UI: Click "Next"
+    
+    UI->>User: Show swipe right demo
+    User->>UI: Click "Next"
+    
+    UI->>User: Show bet amount setup
+    User->>UI: Enter amount (e.g., $10)
+    UI->>Store: Set preset amount
+    Store->>LS: Save 'swipeBetsPreset'
+    
+    User->>UI: Click "Start Betting"
+    UI->>Store: Mark tutorial complete
+    Store->>LS: Save 'swipeBetsTutorialVisited' = true
+    
+    UI->>User: Show main interface
+```
+
+### Tutorial steps
+
+1. **Welcome screen**
+   - Introduction to Swipe Bets
+   - Brief explanation of feature
+   - "Get Started" button
+
+2. **Swipe left demo**
+   - Animated card showing left swipe
+   - "Skip this bet" explanation
+   - Visual indicators
+
+3. **Swipe right demo**
+   - Animated card showing right swipe
+   - "Place this bet" explanation
+   - Visual indicators
+
+4. **Bet amount setup**
+   - Custom amount input
+   - Max bet option
+   - Preset amount selection
+
+5. **Completion**
+   - "Start Betting" button
+   - Transition to main interface
+
+## Regular betting flow
+
+### Successful bet placement
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Cards UI
+    participant Store as MobX Store
+    participant API as Bet API
+    participant WS as WebSocket
+    
+    User->>UI: Opens Swipe Bets
+    UI->>Store: Load recommendations
+    Store->>API: GET /recommendations/swipe-bets
+    API-->>Store: Recommendations data
+    
+    Store->>WS: Subscribe to entities
+    WS-->>Store: Entity data
+    Store->>Store: Enrich cards
+    Store-->>UI: Display 3 cards
+    
+    User->>UI: Swipe right on card
+    UI->>Store: Place bet
+    Store->>Store: Validate bet
+    Store->>API: POST /bets/place
+    
+    API-->>Store: Status: Pending (0)
+    Store->>Store: Wait delay
+    Store->>API: POST /bets/process-request
+    
+    API-->>Store: Status: Success (1)
+    Store->>Store: Track analytics
+    Store->>API: Update balance
+    
+    Store-->>UI: Show success overlay
+    UI->>User: Success animation
+    
+    Store->>Store: Update visible cards
+    Store->>WS: Update subscriptions
+    Store-->>UI: Display next card
+```
+
+### Bet placement states
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Validating: User swipes right
+    
+    Validating --> Invalid: Validation fails
+    Validating --> Placing: Validation passes
+    
+    Invalid --> Idle: Show error
+    
+    Placing --> Pending: Bet sent to API
+    Pending --> Processing: Status = 0
+    Pending --> Success: Status = 1
+    Pending --> CoefficientChanged: Status = 2
+    Pending --> Error: Error code present
+    
+    Processing --> Pending: Retry after delay
+    
+    CoefficientChanged --> Success: User accepts
+    CoefficientChanged --> Idle: User rejects
+    
+    Success --> Updating: Update balance
+    Updating --> NextCard: Load next card
+    NextCard --> Idle
+    
+    Error --> Idle: Show error message
+```
+
+## Card navigation flow
+
+### Swipe left (skip)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Store
+    participant WS as WebSocket
+    
+    User->>UI: Swipe left
+    UI->>Store: Skip card
+    Store->>Store: Add to excluded IDs
+    Store->>Store: Increment card index
+    Store->>Store: Update visible cards
+    
+    Store->>WS: Unsubscribe old entities
+    Store->>WS: Subscribe new entities
+    WS-->>Store: New entity data
+    
+    Store->>Store: Enrich cards
+    Store-->>UI: Display next card
+    UI->>User: Show new card
+```
+
+### Swipe right (place bet)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Store
+    participant API
+    
+    User->>UI: Swipe right
+    UI->>Store: Place bet
+    Store->>Store: Prepare bet data
+    Store->>API: Place bet
+    
+    API-->>Store: Bet response
+    Store->>Store: Process response
+    
+    alt Success
+        Store-->>UI: Show success
+        UI->>User: Success animation
+    else Error
+        Store-->>UI: Show error
+        UI->>User: Error message
+    end
+    
+    Store->>Store: Update visible cards
+    Store-->>UI: Display next card
+```
+
+### Undo action
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Store
+    participant WS as WebSocket
+    
+    User->>UI: Click undo button
+    UI->>Store: Return last card
+    
+    Store->>Store: Check last removed card
+    Store->>Store: Decrement card index
+    
+    Store->>WS: Subscribe to card entities
+    WS-->>Store: Entity data
+    
+    Store->>Store: Add card to visible
+    Store-->>UI: Display returned card
+    UI->>User: Show previous card
+```
+
+## Bet amount management
+
+### Custom amount flow
+
+```mermaid
+flowchart TD
+    Start([User selects Custom tab]) --> ShowKeyboard[Show Numeric Keyboard]
+    ShowKeyboard --> EnterAmount[User enters amount]
+    EnterAmount --> ValidateAmount{Valid amount?}
+    
+    ValidateAmount -->|No| ShowError[Show validation error]
+    ValidateAmount -->|Yes| SavePreset[Save to preset]
+    
+    ShowError --> EnterAmount
+    SavePreset --> UpdateDisplay[Update possible win]
+    UpdateDisplay --> Ready[Ready to bet]
+```
+
+### Max bet flow
+
+```mermaid
+flowchart TD
+    Start([User selects Max tab]) --> GetCard[Get current card]
+    GetCard --> InitBet[Initialize bet]
+    InitBet --> BuildQuery[Build query string]
+    BuildQuery --> CallAPI[Call max bet API]
+    
+    CallAPI --> ReceiveMax[Receive max amount]
+    ReceiveMax --> UpdateDisplay[Update display]
+    UpdateDisplay --> CalculateWin[Calculate possible win]
+    CalculateWin --> Ready[Ready to bet]
+```
+
+## Error handling flows
+
+### Insufficient funds
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Store
+    participant API
+    
+    User->>UI: Swipe right
+    UI->>Store: Place bet
+    Store->>API: Place bet
+    
+    API-->>Store: Error code: 2 (Insufficient funds)
+    Store->>Store: Set error state
+    Store-->>UI: Show error popup
+    
+    UI->>User: "Insufficient funds" message
+    UI->>User: Show deposit button
+    
+    User->>UI: Click deposit
+    UI->>User: Navigate to deposit page
+```
+
+### Market closed
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Store
+    participant API
+    
+    User->>UI: Swipe right
+    UI->>Store: Place bet
+    Store->>API: Place bet
+    
+    API-->>Store: Error code: 4 (Market closed)
+    Store->>Store: Set error state
+    Store-->>UI: Show error popup
+    
+    UI->>User: "Market closed" message
+    Store->>Store: Skip to next card
+    Store-->>UI: Display next card
+```
+
+### Coefficient changed
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI
+    participant Store
+    participant API
+    
+    User->>UI: Swipe right
+    UI->>Store: Place bet
+    Store->>API: Place bet
+    
+    API-->>Store: Status: 2 (Coefficient changed)
+    Store->>Store: Show coefficient alert
+    Store-->>UI: Display old vs new odds
+    
+    UI->>User: "Odds changed" alert
+    User->>UI: Accept or reject
+    
+    alt Accept
+        UI->>Store: Continue with new odds
+        Store->>API: Confirm bet
+        API-->>Store: Success
+    else Reject
+        UI->>Store: Cancel bet
+        Store-->>UI: Return to card
+    end
+```
+
+## Loading and pagination
+
+### Initial load
+
+```mermaid
+flowchart TD
+    Start([Page opens]) --> ShowLoader[Show loading state]
+    ShowLoader --> InitSocket[Initialize WebSocket]
+    InitSocket --> FetchPage1[Fetch page 1 (100 items)]
+    FetchPage1 --> Subscribe[Subscribe to first 3 cards]
+    Subscribe --> EnrichCards[Enrich cards]
+    EnrichCards --> HideLoader[Hide loading state]
+    HideLoader --> DisplayCards[Display 3 cards]
+```
+
+### Load more cards
+
+```mermaid
+flowchart TD
+    Start([User swipes cards]) --> CheckRemaining{Remaining cards ≤ 3?}
+    CheckRemaining -->|No| Continue[Continue swiping]
+    CheckRemaining -->|Yes| IncrementPage[Increment page number]
+    
+    IncrementPage --> FetchNext[Fetch next page]
+    FetchNext --> AppendData[Append to existing data]
+    AppendData --> Continue
+```
+
+### Empty enriched cards
+
+```mermaid
+flowchart TD
+    Start([Enriched cards empty]) --> CheckRaw{Raw cards exist?}
+    CheckRaw -->|No| ShowEmpty[Show empty state]
+    CheckRaw -->|Yes| CheckLoading{Already loading?}
+    
+    CheckLoading -->|Yes| Wait[Wait for load]
+    CheckLoading -->|No| LoadNext[Load next page]
+    
+    LoadNext --> ResetIndex[Reset card index]
+    ResetIndex --> UpdateVisible[Update visible cards]
+    UpdateVisible --> CheckEnriched{Enriched cards?}
+    
+    CheckEnriched -->|Yes| DisplayCards[Display cards]
+    CheckEnriched -->|No| ShowEmpty
+```
+
+## Real-time updates
+
+### WebSocket update flow
+
+```mermaid
+sequenceDiagram
+    participant WS as WebSocket
+    participant Store as MobX Store
+    participant UI as Components
+    
+    WS->>Store: Market update (odds changed)
+    Store->>Store: Update market entity
+    Store->>Store: Recompute enriched cards
+    Store-->>UI: Trigger re-render
+    
+    UI->>UI: Update card display
+    UI->>UI: Animate odds change
+    UI->>User: Show updated odds
+```
+
+### Subscription management
+
+```mermaid
+flowchart TD
+    Start([Card changes]) --> GetNew[Get new card IDs]
+    GetNew --> GetOld[Get old card IDs]
+    
+    GetOld --> FindUnsubscribe[Find IDs to unsubscribe]
+    FindUnsubscribe --> FindSubscribe[Find IDs to subscribe]
+    
+    FindSubscribe --> Unsubscribe[Unsubscribe old IDs]
+    Unsubscribe --> Subscribe[Subscribe new IDs]
+    
+    Subscribe --> FetchData[Fetch entity data]
+    FetchData --> UpdateStore[Update store]
+    UpdateStore --> EnrichCards[Enrich cards]
+```
+
+## Analytics tracking
+
+### Bet placement analytics
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Store
+    participant Analytics
+    
+    User->>Store: Swipe right
+    Store->>Analytics: ADD_BET event
+    Note over Analytics: Track bet added
+    
+    Store->>Store: Prepare bet
+    Store->>Analytics: BEGIN_CHECKOUT event
+    Note over Analytics: Track checkout started
+    
+    Store->>Store: Place bet
+    
+    alt Success
+        Store->>Analytics: PLACE_BET event
+        Note over Analytics: Track successful bet
+    else Error
+        Store->>Analytics: REFUND event
+        Note over Analytics: Track failed bet
+    end
+```
+
+## Edge cases
+
+### No recommendations available
+
+```mermaid
+flowchart TD
+    Start([Load recommendations]) --> FetchAPI[Fetch from API]
+    FetchAPI --> CheckData{Data empty?}
+    
+    CheckData -->|No| DisplayCards[Display cards]
+    CheckData -->|Yes| CheckPages{More pages?}
+    
+    CheckPages -->|Yes| NextPage[Load next page]
+    CheckPages -->|No| ShowEmpty[Show empty state]
+    
+    NextPage --> FetchAPI
+    ShowEmpty --> OfferFilters[Offer filter options]
+```
+
+### WebSocket disconnection
+
+```mermaid
+flowchart TD
+    Start([WebSocket disconnects]) --> DetectDisconnect[Detect disconnection]
+    DetectDisconnect --> ShowWarning[Show connection warning]
+    ShowWarning --> AttemptReconnect[Attempt reconnection]
+    
+    AttemptReconnect --> CheckReconnect{Reconnected?}
+    CheckReconnect -->|Yes| Resubscribe[Resubscribe to entities]
+    CheckReconnect -->|No| RetryDelay[Wait and retry]
+    
+    RetryDelay --> AttemptReconnect
+    Resubscribe --> RefreshData[Refresh card data]
+    RefreshData --> HideWarning[Hide warning]
+```
+
+### Rapid swipes
+
+```mermaid
+flowchart TD
+    Start([User swipes rapidly]) --> CheckAnimation{Animation in progress?}
+    
+    CheckAnimation -->|Yes| IgnoreSwipe[Ignore swipe]
+    CheckAnimation -->|No| SetFlag[Set animation flag]
+    
+    SetFlag --> ProcessSwipe[Process swipe]
+    ProcessSwipe --> ClearFlag[Clear animation flag]
+    ClearFlag --> Ready[Ready for next swipe]
+    
+    IgnoreSwipe --> Ready
+```
+
+## Best practices
+
+### User experience
+
+1. **Smooth animations**: Use CSS transitions for card movements
+2. **Immediate feedback**: Show loading states instantly
+3. **Clear messaging**: Display helpful error messages
+4. **Undo option**: Always allow returning last card
+5. **Tutorial**: Guide first-time users
+
+### Performance
+
+1. **Lazy loading**: Load cards in batches
+2. **Smart subscriptions**: Only subscribe to visible cards
+3. **Debouncing**: Prevent rapid actions
+4. **Caching**: Reuse enriched data
+
+### Error recovery
+
+1. **Retry logic**: Automatically retry failed requests
+2. **Fallback**: Load next page on errors
+3. **User feedback**: Show clear error states
+4. **Graceful degradation**: Handle missing data
+
+## Next steps
+
+- [Component structure](./components) - Understand components
+- [API integration](./api) - Learn about API endpoints
+- [MobX Store](./mobx-store) - Explore state management

@@ -17,12 +17,18 @@
           {
             "group": "Swipe Bets",
             "pages": [
-              "swipe-bets/overview",
-              "swipe-bets/how-it-works",
-              "swipe-bets/key-behavior",
-              "swipe-bets/configuration",
-              "swipe-bets/example",
-              "swipe-bets/limitations"
+              "swipe-bets-v1/overview",
+              "swipe-bets-v1/components",
+              "swipe-bets-v1/api",
+              "swipe-bets-v1/mobx-store",
+              "swipe-bets-v1/flow",
+              "swipe-bets-v1/suggestions",
+              "swipe-bets-v2/overview",
+              "swipe-bets-v2/how-it-works",
+              "swipe-bets-v2/key-behavior",
+              "swipe-bets-v2/configuration",
+              "swipe-bets-v2/example",
+              "swipe-bets-v2/limitations"
             ]
           }
         ]
