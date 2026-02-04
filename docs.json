@@ -32,14 +32,7 @@
           },
           {
             "group": "Swipe Bets",
-            "pages": [
-              "fe-desktop/swipe-bets/overview",
-              "fe-desktop/swipe-bets/components",
-              "fe-desktop/swipe-bets/api",
-              "fe-desktop/swipe-bets/mobx-store",
-              "fe-desktop/swipe-bets/flow",
-              "fe-desktop/swipe-bets/suggestions"
-            ]
+            "pages": []
           }
         ]
       }
