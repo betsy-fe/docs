@@ -1,0 +1,275 @@
+---
+title: How it works
+description: Internal behavior and data flow of SwipeBetsStore
+---
+
+## How it works
+
+SwipeBetsStore manages the lifecycle of swipeable betting cards. It fetches recommendations, subscribes to real-time updates, enriches card data with market/event/tournament information, and handles bet placement.
+
+### Initialization
+
+- Store reads `swipeBetsPreset`, `swipeBetsTutorialVisited`, and `swipeBetsExcludedIds` from localStorage on construction.
+- Socket connection is initialized when `getSwipeBetsData` is called.
+
+### Data loading flow
+
+1. `getSwipeBetsData` fetches recommendations from API with filters (disciplines, excluded IDs, page size).
+2. If response is empty but more pages exist, automatically fetches next page recursively.
+3. Extracts first 3 cards as `visibleCards`.
+4. Builds entity IDs (tournament, event, market) from visible cards.
+5. Subscribes to WebSocket entities and fetches their data in parallel.
+6. Stores raw card data in `swipeBetsData` and entity data in `swipeBetsTournaments`, `swipeBetsEvents`, `swipeBetsMarkets`.
+
+### Card enrichment
+
+- `enrichedCards` computed property matches raw cards with fetched entities.
+- Validates relationships: event must belong to tournament, market must belong to event.
+- Returns only cards with complete and valid data.
+- If enriched cards are empty but raw cards exist, `loadNextPageWhenEnrichedEmpty` attempts to load next page.
+
+### Card navigation
+
+- `updateVisibleCards` advances `currentCardIndex` and updates visible cards slice.
+- Unsubscribes from entities no longer visible.
+- Subscribes to new entities for newly visible cards.
+- Triggers `loadMoreSwipeBets` when 3 or fewer cards remain.
+
+### Bet placement
+
+- `handleSwipeBet` creates bet via `makeSwipeBet`, which initializes bet in betslip store.
+- `prepareSwipeBet` builds bet payload with amount (from preset or max bet), coefficient, currency, outcome ID.
+- `swipeBetProcessRequest` polls bet status up to 5 times with delays.
+- Updates balance and analytics on completion.
+- Sets `hasSwipeBetError` flag on failure.
+
+### Subscription management
+
+- Maintains `subscribedMarketIds`, `subscribedEventIds`, `subscribedTournamentIds` arrays.
+- Unsubscribes from old entities before subscribing to new ones during card transitions.
+- Uses `getFromWebSocket` helper to fetch entity data after subscription.
+
+### Excluded cards
+
+- `addExcludedId` adds card ID to `excludeIds` array and persists to localStorage.
+- Excluded IDs are passed to API on subsequent requests to filter out unwanted cards.
+
+### Max bet calculation
+
+- `getCurrentMaxBet` fetches max bet amount for current card's outcome.
+- Stores result in `swipeBetsMaxBet`.
+- Used when `swipeBetCurrentTab` is set to `'max'`.
+
+### Card return
+
+- `returnLastRemovedCard` restores previously removed card to visible cards.
+- Decrements `currentCardIndex` and fetches entity data for returned card.
+- Resubscribes to card's entities.
+
+## Public actions
+
+### getSwipeBetsData
+
+Fetches initial swipe bet recommendations and initializes visible cards.
+
+**Arguments:**
+- `disciplinesIds` (string[]): Filter by discipline IDs.
+- `excludeIds` (string[]): Card IDs to exclude from results. Defaults to `this.excludeIds`.
+- `pageSize` (number): Number of cards per page. Default: 100.
+
+**Side effects:**
+- Initializes socket connection.
+- Sets `isLoadingInitialCards` to true during fetch.
+- Updates `swipeBetsData`, `visibleCards`, entity data, and subscriptions.
+- Recursively fetches next page if current page is empty but more pages exist.
+
+**Constraints:**
+- Does nothing if `isLoadingInitialCards` is already true.
+
+---
+
+### updateVisibleCards
+
+Advances to next set of visible cards and updates subscriptions.
+
+**Arguments:** None.
+
+**Side effects:**
+- Increments `currentCardIndex` (unless card was returned).
+- Updates `visibleCards` slice.
+- Unsubscribes from entities no longer visible.
+- Subscribes to new entities for newly visible cards.
+- Triggers `loadMoreSwipeBets` when 3 or fewer cards remain.
+
+**Constraints:**
+- Clears visible cards and entity data if no cards remain.
+
+---
+
+### loadMoreSwipeBets
+
+Fetches additional pages of recommendations and appends to existing data.
+
+**Arguments:**
+- `disciplinesIds` (string[]): Filter by discipline IDs.
+- `excludeIds` (string[]): Card IDs to exclude. Defaults to `this.excludeIds`.
+- `pageNumber` (number): Page to fetch. Default: 1.
+- `pageSize` (number): Cards per page. Default: 100.
+
+**Side effects:**
+- Sets `isLoadingMoreCards` to true during fetch.
+- Replaces `swipeBetsData` with new page data.
+
+**Constraints:**
+- Does nothing if `isLoadingMoreCards` is true or `swipeBetsData` is null.
+
+---
+
+### handleSwipeBet
+
+Places a swipe bet and processes the result.
+
+**Arguments:**
+- `marketId` (string): Market LID.
+- `outcomeId` (string): Outcome LID.
+
+**Side effects:**
+- Sets `isWaitingSwipeBet` to true during processing.
+- Creates bet via `makeSwipeBet`.
+- Polls bet status via `swipeBetProcessRequest` (up to 5 attempts).
+- Updates `swipeBetData` with response.
+- Sets `hasSwipeBetError` on failure.
+- Updates user balance.
+- Sends analytics events.
+- Clears `swipeBetData` after processing.
+
+**Constraints:**
+- Returns error immediately if `swipeBetData` is already set (bet in progress).
+
+**Failure cases:**
+- Invalid bet amount.
+- Bet validation fails.
+- API error during placement.
+- Insufficient funds (error code 2).
+
+---
+
+### makeSwipeBet
+
+Creates and places a single swipe bet.
+
+**Arguments:**
+- `outcomeId` (string): Outcome LID.
+- `marketId` (string): Market LID.
+- `trackMarks` (string[]): Tracking identifiers. Default: `[betTrackMark.swipeBet]`.
+- `bubblePostMessage` (boolean): Whether to send postMessage events. Default: true.
+
+**Side effects:**
+- Initializes bet in betslip store.
+- Calls API to place bet.
+- Sends postMessage events (`clickPlaceBet`, `placeBet`, `placeBetError`).
+- Sends analytics event (`ADD_BET`).
+
+**Constraints:**
+- Returns error if bet amount is invalid.
+- Returns betslip validation status if bet is invalid.
+
+**Failure cases:**
+- Outcome not found in store.
+- API error during placement.
+
+---
+
+### returnLastRemovedCard
+
+Restores the last removed card to visible cards.
+
+**Arguments:** None.
+
+**Side effects:**
+- Decrements `currentCardIndex`.
+- Fetches entity data for returned card.
+- Updates `swipeBetsTournaments`, `swipeBetsEvents`, `swipeBetsMarkets`.
+- Adds card to front of `visibleCards`.
+- Resubscribes to card's entities.
+- Clears `lastRemovedCard`.
+- Sets `isCardReturned` to true.
+
+**Constraints:**
+- Does nothing if `lastRemovedCard` is null.
+
+---
+
+### getCurrentMaxBet
+
+Fetches maximum bet amount for the current card's outcome.
+
+**Arguments:** None.
+
+**Side effects:**
+- Initializes bet for current card.
+- Calls max bet API.
+- Updates `swipeBetsMaxBet` with result.
+
+**Constraints:**
+- Sets `swipeBetsMaxBet` to null if no enriched cards exist.
+
+---
+
+### addExcludedId
+
+Adds a card ID to the exclusion list.
+
+**Arguments:**
+- `id` (string): Card ID to exclude.
+
+**Side effects:**
+- Appends ID to `excludeIds` array if not already present.
+- Persists updated array to localStorage as `swipeBetsExcludedIds`.
+
+**Constraints:**
+- Does nothing if ID is empty or already excluded.
+
+---
+
+### setSwipeBetsPreset
+
+Sets the bet amount preset.
+
+**Arguments:**
+- `value` (string): Preset amount.
+
+**Side effects:**
+- Updates `swipeBetsPreset`.
+
+---
+
+### setSwipeBetsTutorialVisited
+
+Marks tutorial as visited.
+
+**Arguments:**
+- `value` (boolean): Whether tutorial was visited.
+
+**Side effects:**
+- Updates `swipeBetsTutorialVisited`.
+- Persists value to localStorage as `swipeBetsTutorialVisited`.
+
+---
+
+### loadNextPageWhenEnrichedEmpty
+
+Attempts to load next page when enriched cards are empty but raw cards exist.
+
+**Arguments:** None.
+
+**Side effects:**
+- Increments `cardsPageNumber`.
+- Calls `loadMoreSwipeBets` with next page.
+- Resets `currentCardIndex` to 0.
+- Calls `updateVisibleCards` to rebuild visible cards.
+- Sets `hasTriedLoadingNextPageForEmptyCards` flag during execution.
+
+**Constraints:**
+- Does nothing if already tried, loading in progress, or no swipe bets data exists.
+- Does nothing if current page is last page.
