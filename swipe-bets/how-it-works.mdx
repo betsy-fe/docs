@@ -1,0 +1,175 @@
+---
+title: How it works
+description: Technical flow and internal behavior of Swipe Bets
+---
+
+## Data flow
+
+### 1. Initialization
+
+When a user opens Swipe Bets:
+
+1. Socket connection is established via `Socket.initSocket()`
+2. API request fetches initial recommendations from `/recommendations/swipe-bets`
+3. First 3 cards are loaded and displayed
+4. WebSocket subscriptions are created for tournaments, events, and markets
+
+### 2. Card enrichment
+
+Raw recommendation data is enriched with real-time data:
+
+```typescript
+interface ISwipeBetItem {
+  _id: string;
+  disciplineId: string;
+  eventId: string;
+  eventMarketId: string;
+  tournamentId: string;
+  outcomeId: string;
+  price: number;
+  // ... other fields
+}
+
+interface IEnrichedSwipeBetCard extends ISwipeBetItem {
+  tournament: any; // From WebSocket
+  event: any;      // From WebSocket
+  market: any;     // From WebSocket
+}
+```
+
+The enrichment process:
+- Constructs entity IDs: `1.{disciplineId}.{tournamentId}`, `1.{eventId}`, `1.{eventId}.{eventMarketId}`
+- Subscribes to WebSocket entities
+- Fetches entity data via `getFromWebSocket()`
+- Matches entities to cards based on ID relationships
+- Filters out cards with missing or mismatched data
+
+### 3. Card navigation
+
+The system maintains 3 visible cards at a time:
+
+- **Current card** (index 0): User can interact with this card
+- **Next card** (index 1): Partially visible behind current card
+- **Third card** (index 2): Slightly visible behind next card
+
+When a card is swiped:
+1. Current card animates off screen
+2. Next cards move forward (index decrements)
+3. New card loads from the queue
+4. WebSocket subscriptions update to match new visible cards
+
+### 4. Bet placement
+
+When user swipes right:
+
+1. Card animates to the right
+2. Bet state changes to `'progress'`
+3. Bet is initialized: `mobx.betslip.initNewBet()`
+4. Bet data is prepared with amount and coefficient
+5. API call to `/place` endpoint
+6. Response is processed:
+   - Status 0: Pending, retry after delay
+   - Status 2: Coefficient changed, show alert
+   - Error: Show error state
+   - Success: Show success state
+7. Balance is updated
+8. Next card loads
+
+### 5. Subscription management
+
+WebSocket subscriptions are optimized:
+
+**On card change:**
+- Unsubscribe from entities no longer visible
+- Subscribe to new entities
+- Reuse existing subscriptions when possible
+
+**Entity types:**
+- `tournament`: Tournament data (name, logo)
+- `event`: Event data (competitors, start time)
+- `market`: Market data (outcomes, odds, frozen status)
+
+### 6. Pagination
+
+Cards are loaded in batches:
+
+- Initial load: 100 cards (pageSize: 100)
+- When 3 or fewer cards remain, next page loads automatically
+- Excluded IDs are sent to avoid showing previously swiped cards
+- Empty pages trigger automatic next page load
+
+### 7. State persistence
+
+User preferences are stored in localStorage:
+
+- `swipeBetsPreset`: Custom bet amount
+- `swipeBetsTutorialVisited`: Tutorial completion flag
+- `swipeBetsExcludedIds`: Array of swiped card IDs
+
+## Component hierarchy
+
+```
+SwipeBetsPage
+└── ContainerSwipeBet
+    ├── HeaderWrapperSwipeBet
+    │   ├── Balance display
+    │   ├── My Bets link
+    │   └── Warning banner (if low balance)
+    ├── WrapperSwipeBet (if tutorial completed)
+    │   ├── CardsSwipeBet
+    │   │   └── CardSwipeBet (3 instances)
+    │   │       ├── Tournament info
+    │   │       ├── Event matchup
+    │   │       ├── Outcome details
+    │   │       └── Possible win amount
+    │   └── ControlsSwipeBet
+    │       ├── Return button
+    │       ├── Skip button
+    │       ├── Bet button
+    │       └── (Share button - commented out)
+    └── BodySwipeBetTutorial (if tutorial not completed)
+        ├── WrapperSwipeBetTutorial
+        │   ├── HeaderSwipeBetTutorial
+        │   ├── GuideSwipeBet
+        │   ├── InputSwipeBetTutorial
+        │   └── OddsInfoSwipeBet
+        ├── ButtonRulesApply
+        └── KeyboardSwipeBet (when input focused)
+```
+
+## Animation system
+
+Cards use Framer Motion for animations:
+
+**Card positioning:**
+- Z-index: `3 - index` (current card on top)
+- Scale: `1 - (index * 0.03)` (cards get smaller)
+- TranslateY: `index * 2.75%` (cards stack vertically)
+
+**Swipe animations:**
+- Drag threshold: 150px
+- Right swipe (bet): Animates to +300px, processes bet
+- Left swipe (skip): Animates to -300px, loads next card
+- Return: Animates from -300px back to 0
+
+**State animations:**
+- Progress: Overlay with spinner
+- Success: Green overlay with checkmark
+- Error: Red overlay, card returns to position
+
+## Error handling
+
+**Validation errors:**
+- Invalid amount: Returns error before API call
+- Insufficient balance: Disables bet button
+- Frozen market: Shows lock icon, disables betting
+
+**API errors:**
+- Network error: Shows error overlay, card returns
+- Bet rejection: Shows error message, card returns
+- Timeout: Retries up to 5 times with delay
+
+**Recovery:**
+- Error state clears after 1 second
+- Card returns to original position
+- User can retry or skip the card
