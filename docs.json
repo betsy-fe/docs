@@ -29,10 +29,9 @@
             "pages": [
               "swipe-bets-v2/overview",
               "swipe-bets-v2/key-behavior",
+              "swipe-bets-v2/how-it-works",
               "swipe-bets-v2/configuration",
-              "swipe-bets-v2/example",
-              "swipe-bets-v2/limitations",
-              "swipe-bets-v2/how-it-works"
+              "swipe-bets-v2/example"
             ]
           }
         ]
