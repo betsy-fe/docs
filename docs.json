@@ -33,6 +33,12 @@
               "swipe-bets-v2/configuration",
               "swipe-bets-v2/example"
             ]
+          },
+          {
+            "group": "Swipe Bets V3",
+            "pages": [
+              "swipe-bets-v3/overview"
+            ]
           }
         ]
       }
